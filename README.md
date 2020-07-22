@@ -1,27 +1,19 @@
-# gimp-superxBR
-A GIMP Python plugin for integer scaling pixel art to higher resolutions using Hyllian's Super-xBR algorithm.
-
-Hooks into the GIMP-Python API to display progress and request a custom scale factor.
+# python-superxBR
+A python application for integer scaling pixel art to higher resolutions using Hyllian's Super-xBR algorithm.
 
 Adapted from Hyllian's C++ version of Super-xBR - https://pastebin.com/cbH8ZQQT
 
-# Installation
+# Execution
 
-Add superxBR.py to the directory where your GIMP plugins are located:
+## From the command line:
 
-1. Download this repository and extract it
+>python py-superxbr.py input.png output.png 2
 
-2. Open GIMP
+## From another Python script:
 
-3. Edit >> Preferences
+>import python-superxbr
+>python-xbr.scale(input.png, output.png, 2)
 
-4. In the Folders dropdown on the left, find the Plugins tab.
-
-![img](https://i.imgur.com/Sff22K4.png)
-
-5. Highlight one of the directories and click the top right button ("Show file location in the file manager").
-
-6. Drag superxBR.py into the directory, then restart GIMP. You will find the plugin in Filters >> Enhance >> Super-xBR(py).
 
 # Examples
 
@@ -43,4 +35,4 @@ This project is licensed under the MIT License. See LICENSE.md for more detail.
 
 Hyllian for their Super-xBR algorithm and reference PDF/C++ code.
 
-GIMP-Python, a wrapper API for various C functions in libgimp, created by James Henstridge.
+GIMP-superxBR, a plug-in for GIMP which was the basis for this application. By [abelbriggs1](https://github.com/abelbriggs1/gimp-superxBR)
