@@ -67,7 +67,8 @@ def _rgba_to_int(width, height, pic_arr, rgba_flag):
 
     int_arr_length = width * height
     # 'L' denotes a unsigned 32bit integer (rather, a long in Python)
-    int_arr = array("L", [0] * int_arr_length)
+    #int_arr = array("L", [0] * int_arr_length)
+    int_arr = [0] * int_arr_length
 
     for i in range(0, int_arr_length):
 
@@ -188,15 +189,16 @@ def python_superxBR(image_in, image_out, scale_factor = 2, verbose = True):
     out_width = original_width * scale_factor
     out_height = original_height * scale_factor
     
-    original_pixel_data = array("B", original_int)
+    #original_pixel_data = array("B", original_int)
+    original_pixel_data = original_int
 
     # True if the pixel data is RGBA, false if it's RGB and needs alpha to be fudged.
     rgba_flag = (original.mode == "RGBA") 
     
     original_pixel_data = _rgba_to_int(original_width, original_height, original_pixel_data, rgba_flag)
     
-    # output_data = array("L", [0L] * (out_width * out_height))
-    output_data = array("L", [0] * (out_width * out_height))
+    # output_data = array("L", [0] * (out_width * out_height))
+    output_data = [0] * (out_width * out_height)
 
     # - - - - - Super-xBR Scaling - - - - -
     # First pass begins here
@@ -458,7 +460,7 @@ def python_superxBR(image_in, image_out, scale_factor = 2, verbose = True):
     # --- end super-XBR code ---
     output_data = _int_to_rgba(out_width, out_height, output_data)
     out = Image.frombytes("RGBA", (out_width, out_height), output_data.tobytes())
-    out.save("test_out.png")
+    out.save(image_out)
     print("Done in {} seconds".format(int(time.time() - start)))
     
     
