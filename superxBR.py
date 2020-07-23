@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 
+from PIL import Image
 from array import array
 import math
-from gimpfu import *
+import io
+import itertools
+import time
 
 # The below code is an adaptation of Hyllian's C++ code
 # from https://pastebin.com/cbH8ZQQT.
@@ -29,15 +32,15 @@ from gimpfu import *
 # THE SOFTWARE.
 
 # Absolute difference. Used for edge detection.
-def abs_diff(val1, val2):
+def _abs_diff(val1, val2):
     return abs(val1 - val2)
 
 # Clamps x to a value between floor and ceiling.
-def clamp(x, floor, ceiling):
+def _clamp(x, floor, ceiling):
     return max(min(x, ceiling), floor)
 
 # Easy way to return an empty 4D matrix list.
-def matrix_4D():
+def _matrix_4D():
     return [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
 
 # Transforms an array of RGB or RGBA values into an array of single integer RGBA values.
@@ -60,7 +63,7 @@ def matrix_4D():
 # where the | indicates a split between pixels, and the size of the pic_arr is
 # width * height * 4. Note that each pixel includes a alpha value now, in 
 # indices 3, 7, 11, ... etc.
-def rgba_to_int(width, height, pic_arr, rgba_flag):
+def _rgba_to_int(width, height, pic_arr, rgba_flag):
 
     int_arr_length = width * height
     # 'L' denotes a unsigned 32bit integer (rather, a long in Python)
@@ -89,10 +92,10 @@ def rgba_to_int(width, height, pic_arr, rgba_flag):
 # Does the opposite of rgba_to_int - transforms the integer into an RGBA array.
 # See above for the format of the RGBA array.
 # The integer format is clearly defined, so this one is pretty easy.
-def int_to_rgba(width, height, pic_arr):
+def _int_to_rgba(width, height, pic_arr):
 
     int_arr_length = width * height
-    int_arr = array("B", "\x00" * (int_arr_length * 4))
+    int_arr = array("B", b"\x00" * (int_arr_length * 4))
 
     for i in range(0, int_arr_length):
         # we want an RGBA array, so just the bitshift this time.
@@ -135,31 +138,36 @@ def int_to_rgba(width, height, pic_arr):
 #  2   2 |  4  0
 
 # Calculates diagonal edge value from pixel matrix (mat) and pixel weightings (wp)
-def diagonal_edge(mat, wp):
-    diagonal_weight1 = wp[0] * (abs_diff(mat[0][2], mat[1][1]) + abs_diff(mat[1][1], mat[2][0]) + \
-    abs_diff(mat[1][3], mat[2][2]) + abs_diff(mat[2][2], mat[3][1])) + \
-    wp[1] * (abs_diff(mat[0][3], mat[1][2]) + abs_diff(mat[2][1], mat[3][0])) + \
-    wp[2] * (abs_diff(mat[0][3], mat[2][1]) + abs_diff(mat[1][2], mat[3][0])) + \
-    wp[3] * (abs_diff(mat[1][2], mat[2][1])) + \
-    wp[4] * (abs_diff(mat[0][2], mat[2][0]) + abs_diff(mat[1][3], mat[3][1])) + \
-    wp[5] * (abs_diff(mat[0][1], mat[1][0]) + abs_diff(mat[2][3], mat[3][2]))
+def _diagonal_edge(mat, wp):
+    diagonal_weight1 = wp[0] * (_abs_diff(mat[0][2], mat[1][1]) + _abs_diff(mat[1][1], mat[2][0]) + \
+    _abs_diff(mat[1][3], mat[2][2]) + _abs_diff(mat[2][2], mat[3][1])) + \
+    wp[1] * (_abs_diff(mat[0][3], mat[1][2]) + _abs_diff(mat[2][1], mat[3][0])) + \
+    wp[2] * (_abs_diff(mat[0][3], mat[2][1]) + _abs_diff(mat[1][2], mat[3][0])) + \
+    wp[3] * (_abs_diff(mat[1][2], mat[2][1])) + \
+    wp[4] * (_abs_diff(mat[0][2], mat[2][0]) + _abs_diff(mat[1][3], mat[3][1])) + \
+    wp[5] * (_abs_diff(mat[0][1], mat[1][0]) + _abs_diff(mat[2][3], mat[3][2]))
 
-    diagonal_weight2 = wp[0] * (abs_diff(mat[0][1], mat[1][2]) + abs_diff(mat[1][2], mat[2][3]) + \
-    abs_diff(mat[1][0], mat[2][1]) + abs_diff(mat[2][1], mat[3][2])) + \
-    wp[1] * (abs_diff(mat[0][0], mat[1][1]) + abs_diff(mat[2][2], mat[3][3])) + \
-    wp[2] * (abs_diff(mat[0][0], mat[2][2]) + abs_diff(mat[1][1], mat[3][3])) + \
-    wp[3] * (abs_diff(mat[1][1], mat[2][2])) + \
-    wp[4] * (abs_diff(mat[1][0], mat[3][2]) + abs_diff(mat[0][1], mat[2][3])) + \
-    wp[5] * (abs_diff(mat[0][2], mat[1][3]) + abs_diff(mat[2][0], mat[3][1]))
+    diagonal_weight2 = wp[0] * (_abs_diff(mat[0][1], mat[1][2]) + _abs_diff(mat[1][2], mat[2][3]) + \
+    _abs_diff(mat[1][0], mat[2][1]) + _abs_diff(mat[2][1], mat[3][2])) + \
+    wp[1] * (_abs_diff(mat[0][0], mat[1][1]) + _abs_diff(mat[2][2], mat[3][3])) + \
+    wp[2] * (_abs_diff(mat[0][0], mat[2][2]) + _abs_diff(mat[1][1], mat[3][3])) + \
+    wp[3] * (_abs_diff(mat[1][1], mat[2][2])) + \
+    wp[4] * (_abs_diff(mat[1][0], mat[3][2]) + _abs_diff(mat[0][1], mat[2][3])) + \
+    wp[5] * (_abs_diff(mat[0][2], mat[1][3]) + _abs_diff(mat[2][0], mat[3][1]))
 
     return (diagonal_weight1 - diagonal_weight2)
 
-def python_superxBR(timg, tdrawable, scale_factor = 2):
+def python_superxBR(image_in, image_out, scale_factor = 2, verbose = True):
 
     # don't bother if the scale factor isn't a power of 2.
     if scale_factor == 0 or (scale_factor & (scale_factor - 1)) != 0:
-        gimp.progress_init("Error: scale factor not a power of 2. Exiting...")
+        print("Error: scale factor not a power of 2. Exiting...")
         return
+      
+
+    start = time.time()
+    original = Image.open(image_in)
+    original_int = list(itertools.chain(*list(original.getdata())))
 
     # constants for the algorithm
     WEIGHT1 = 0.129633
@@ -174,41 +182,33 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
     LUMA_G = 0.7152
     LUMA_B = 0.0722 
 
-    gimp.context_push()
-    timg.undo_group_start()
-
-    original_width = tdrawable.width
-    original_height = tdrawable.height
+    original_width = original.size[0]
+    original_height = original.size[1]
 
     out_width = original_width * scale_factor
     out_height = original_height * scale_factor
-
-    original_pixel_region = tdrawable.get_pixel_rgn(0, 0, original_width, original_height, False, False)
     
-    original_pixel_data = array("B", original_pixel_region[0:original_width, 0:original_height])
+    original_pixel_data = array("B", original_int)
 
     # True if the pixel data is RGBA, false if it's RGB and needs alpha to be fudged.
-    rgba_flag = (tdrawable.type == RGBA_IMAGE) 
+    rgba_flag = (original.mode == "RGBA") 
     
-    original_pixel_data = rgba_to_int(original_width, original_height, original_pixel_data, rgba_flag)
-
-    dest_drawable = gimp.Layer(timg, "scaled", out_width, out_height, RGBA_IMAGE, 100, NORMAL_MODE)
-    dest_region = dest_drawable.get_pixel_rgn(0, 0, out_width, out_height, True, True)
+    original_pixel_data = _rgba_to_int(original_width, original_height, original_pixel_data, rgba_flag)
     
-    output_data = array("L", [0L] * (out_width * out_height))
+    # output_data = array("L", [0L] * (out_width * out_height))
+    output_data = array("L", [0] * (out_width * out_height))
 
     # - - - - - Super-xBR Scaling - - - - -
     # First pass begins here
     # Pixel weightings for pass 1.
-    gimp.progress_init("Running first pass of Super-xBR on " + tdrawable.name + "...")
 
     weight_pixel = [2.0, 1.0, -1.0, 4.0, -1.0, 1.0]
 
-    red = matrix_4D()
-    green = matrix_4D()
-    blue = matrix_4D()
-    alpha = matrix_4D()
-    Y_luma = matrix_4D()
+    red = _matrix_4D()
+    green = _matrix_4D()
+    blue = _matrix_4D()
+    alpha = _matrix_4D()
+    Y_luma = _matrix_4D()
 
     # "f" variables are floating point, while "i" variables are meant to be integers.
     # r/g/b/a correspond to red, green, blue, and alpha values respectively.
@@ -218,21 +218,23 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
     min_g_sample, max_g_sample = None, None
     min_b_sample, max_b_sample = None, None
     min_a_sample, max_a_sample = None, None
-
+    
+    print("Starting Pass 1 in {} seconds".format(int(time.time() - start)))
+    
     for y in range(0, out_height, 2):
         for x in range(0, out_width, 2):
 
             # central pixels on original image: cx and cy
-            cx = x / scale_factor
-            cy = y / scale_factor
+            cx = x // scale_factor
+            cy = y // scale_factor
 
             # sample supporting pixels on original image: sx and sy
             for sx in range(-1, 3):
                 for sy in range(-1, 3):
 
                     # clamp the pixel locations.
-                    csy = clamp(sy + cy, 0, original_height - 1)
-                    csx = clamp(sx + cx, 0, original_width - 1)
+                    csy = _clamp(sy + cy, 0, original_height - 1)
+                    csx = _clamp(sx + cx, 0, original_width - 1)
 
                     # sample and add weighted components
                     sample = original_pixel_data[csy * original_width + csx]
@@ -253,7 +255,7 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
             max_b_sample = max(blue[1][1], blue[2][1], blue[1][2], blue[2][2])
             max_a_sample = max(alpha[1][1], alpha[2][1], alpha[1][2], alpha[2][2])
 
-            d_edge = diagonal_edge(Y_luma, weight_pixel)
+            d_edge = _diagonal_edge(Y_luma, weight_pixel)
             
             if d_edge <= 0:
                 rf = w1 * (red[0][3] + red[3][0]) + w2 * (red[1][2] + red[2][1])
@@ -267,24 +269,22 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
                 af = w1 * (alpha[0][0] + alpha[3][3]) + w2 * (alpha[1][1] + alpha[2][2])
 
             # clamp to prevent ringing artifacts: https://en.wikipedia.org/wiki/Ringing_artifacts
-            rf = clamp(rf, min_r_sample, max_r_sample)
-            gf = clamp(gf, min_g_sample, max_g_sample)
-            bf = clamp(bf, min_b_sample, max_b_sample)
-            af = clamp(af, min_a_sample, max_a_sample)
+            rf = _clamp(rf, min_r_sample, max_r_sample)
+            gf = _clamp(gf, min_g_sample, max_g_sample)
+            bf = _clamp(bf, min_b_sample, max_b_sample)
+            af = _clamp(af, min_a_sample, max_a_sample)
             # need to be integers so we can do bitwise operations on these variables later
-            ri = int(clamp(math.ceil(rf), 0, 255))
-            gi = int(clamp(math.ceil(gf), 0, 255))
-            bi = int(clamp(math.ceil(bf), 0, 255))
-            ai = int(clamp(math.ceil(af), 0, 255))
+            ri = int(_clamp(math.ceil(rf), 0, 255))
+            gi = int(_clamp(math.ceil(gf), 0, 255))
+            bi = int(_clamp(math.ceil(bf), 0, 255))
+            ai = int(_clamp(math.ceil(af), 0, 255))
 
             # write to data
             output_data[y * out_width + x] = output_data[y * out_width + x + 1] = \
             output_data[(y + 1) * out_width + x] = original_pixel_data[cy * original_width + cx]
             output_data[(y + 1) * out_width + x + 1] = (ai << 24) | (bi << 16) | (gi << 8) | ri
-        gimp.progress_update(float(y)/out_height)
     
     # Second pass
-    gimp.progress_init("Running second pass of Super-xBR on " + tdrawable.name + "...")
 
     weight_pixel[0] = 2.0
     weight_pixel[1] = 0.0
@@ -292,7 +292,9 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
     weight_pixel[3] = 0.0
     weight_pixel[4] = 0.0
     weight_pixel[5] = 0.0
-
+    
+    print("Starting Pass 2 in {} seconds".format(int(time.time() - start)))
+    
     for y in range(0, out_height, 2):
         for x in range(0, out_width, 2):
             # sample supporting pixels in original image
@@ -300,8 +302,8 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
                 for sy in range(-1, 3):
 
                     # clamp pixel locations
-                    csy = clamp(sx - sy + y, 0, scale_factor * original_height - 1)
-                    csx = clamp(sx + sy + x, 0, scale_factor * original_width - 1)
+                    csy = _clamp(sx - sy + y, 0, scale_factor * original_height - 1)
+                    csx = _clamp(sx + sy + x, 0, scale_factor * original_width - 1)
 
                     # sample and add weighted components
                     sample = output_data[csy * out_width + csx]
@@ -322,7 +324,7 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
             max_b_sample = max(blue[1][1], blue[2][1], blue[1][2], blue[2][2])
             max_a_sample = max(alpha[1][1], alpha[2][1], alpha[1][2], alpha[2][2])
 
-            d_edge = diagonal_edge(Y_luma, weight_pixel)
+            d_edge = _diagonal_edge(Y_luma, weight_pixel)
 
             if d_edge <= 0:
                 rf = w3 * (red[0][3] + red[3][0]) + w4 * (red[1][2] + red[2][1])
@@ -336,23 +338,23 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
                 af = w3 * (alpha[0][0] + alpha[3][3]) + w4 * (alpha[1][1] + alpha[2][2])
             
             # clamp to prevent ringing artifacts: https://en.wikipedia.org/wiki/Ringing_artifacts
-            rf = clamp(rf, min_r_sample, max_r_sample)
-            gf = clamp(gf, min_g_sample, max_g_sample)
-            bf = clamp(bf, min_b_sample, max_b_sample)
-            af = clamp(af, min_a_sample, max_a_sample)
+            rf = _clamp(rf, min_r_sample, max_r_sample)
+            gf = _clamp(gf, min_g_sample, max_g_sample)
+            bf = _clamp(bf, min_b_sample, max_b_sample)
+            af = _clamp(af, min_a_sample, max_a_sample)
             # need to be integers so we can do bitwise operations on these variables later
-            ri = int(clamp(math.ceil(rf), 0, 255))
-            gi = int(clamp(math.ceil(gf), 0, 255))
-            bi = int(clamp(math.ceil(bf), 0, 255))
-            ai = int(clamp(math.ceil(af), 0, 255))
+            ri = int(_clamp(math.ceil(rf), 0, 255))
+            gi = int(_clamp(math.ceil(gf), 0, 255))
+            bi = int(_clamp(math.ceil(bf), 0, 255))
+            ai = int(_clamp(math.ceil(af), 0, 255))
             output_data[y * out_width + x + 1] = (ai << 24) | (bi << 16) | (gi << 8) | ri
 
             for sx in range(-1, 3):
                 for sy in range(-1, 3):
 
                     # clamp pixel locations
-                    csy = clamp(sx - sy + 1 + y, 0, scale_factor * original_height - 1)
-                    csx = clamp(sx + sy - 1 + x, 0, scale_factor * original_width - 1)
+                    csy = _clamp(sx - sy + 1 + y, 0, scale_factor * original_height - 1)
+                    csx = _clamp(sx + sy - 1 + x, 0, scale_factor * original_width - 1)
 
                     # sample and add weighted components
                     sample = output_data[csy * out_width + csx]
@@ -363,7 +365,7 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
                     Y_luma[sx + 1][sy + 1] = (LUMA_R * red[sx + 1][sy + 1] + \
                     LUMA_G * green[sx + 1][sy + 1] + LUMA_B * blue[sx + 1][sy + 1])
             
-            d_edge = diagonal_edge(Y_luma, weight_pixel)
+            d_edge = _diagonal_edge(Y_luma, weight_pixel)
 
             if d_edge <= 0:
                 rf = w3 * (red[0][3] + red[3][0]) + w4 * (red[1][2] + red[2][1])
@@ -377,21 +379,19 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
                 af = w3 * (alpha[0][0] + alpha[3][3]) + w4 * (alpha[1][1] + alpha[2][2])
             
             # clamp to prevent ringing artifacts: https://en.wikipedia.org/wiki/Ringing_artifacts
-            rf = clamp(rf, min_r_sample, max_r_sample)
-            gf = clamp(gf, min_g_sample, max_g_sample)
-            bf = clamp(bf, min_b_sample, max_b_sample)
-            af = clamp(af, min_a_sample, max_a_sample)
+            rf = _clamp(rf, min_r_sample, max_r_sample)
+            gf = _clamp(gf, min_g_sample, max_g_sample)
+            bf = _clamp(bf, min_b_sample, max_b_sample)
+            af = _clamp(af, min_a_sample, max_a_sample)
             # need to be integers so we can do bitwise operations on these variables later
-            ri = int(clamp(math.ceil(rf), 0, 255))
-            gi = int(clamp(math.ceil(gf), 0, 255))
-            bi = int(clamp(math.ceil(bf), 0, 255))
-            ai = int(clamp(math.ceil(af), 0, 255))
+            ri = int(_clamp(math.ceil(rf), 0, 255))
+            gi = int(_clamp(math.ceil(gf), 0, 255))
+            bi = int(_clamp(math.ceil(bf), 0, 255))
+            ai = int(_clamp(math.ceil(af), 0, 255))
             output_data[(y + 1) * out_width + x] = (ai << 24) | (bi << 16) | (gi << 8) | ri
-        gimp.progress_update(float(y)/out_height)
 
     
     # Third pass
-    gimp.progress_init("Running third pass of Super-xBR on " + tdrawable.name + "...")
 
     weight_pixel[0] = 2.0
     weight_pixel[1] = 1.0
@@ -399,15 +399,17 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
     weight_pixel[3] = 4.0
     weight_pixel[4] = -1.0
     weight_pixel[5] = 1.0
-
+    
+    print("Starting Pass 3 in {} seconds".format(int(time.time() - start)))
+    
     for y in range(out_height - 1, -1, -1):
         for x in range(out_width - 1, -1, -1):
             for sx in range(-2, 2):
                 for sy in range(-2, 2):
                     
                     # clamp pixel locations
-                    csy = clamp(sy + y, 0, scale_factor * original_height - 1)
-                    csx = clamp(sx + x, 0, scale_factor * original_width - 1)
+                    csy = _clamp(sy + y, 0, scale_factor * original_height - 1)
+                    csx = _clamp(sx + x, 0, scale_factor * original_width - 1)
                     
                     # sample and add weighted components
                     sample = output_data[csy * out_width + csx]
@@ -428,7 +430,7 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
             max_b_sample = max(blue[1][1], blue[2][1], blue[1][2], blue[2][2])
             max_a_sample = max(alpha[1][1], alpha[2][1], alpha[1][2], alpha[2][2])
 
-            d_edge = diagonal_edge(Y_luma, weight_pixel)
+            d_edge = _diagonal_edge(Y_luma, weight_pixel)
 
             if d_edge <= 0:
                 rf = w1 * (red[0][3] + red[3][0]) + w2 * (red[1][2] + red[2][1])
@@ -442,48 +444,35 @@ def python_superxBR(timg, tdrawable, scale_factor = 2):
                 af = w1 * (alpha[0][0] + alpha[3][3]) + w2 * (alpha[1][1] + alpha[2][2])
             
             # clamp to prevent ringing artifacts: https://en.wikipedia.org/wiki/Ringing_artifacts
-            rf = clamp(rf, min_r_sample, max_r_sample)
-            gf = clamp(gf, min_g_sample, max_g_sample)
-            bf = clamp(bf, min_b_sample, max_b_sample)
-            af = clamp(af, min_a_sample, max_a_sample)
+            rf = _clamp(rf, min_r_sample, max_r_sample)
+            gf = _clamp(gf, min_g_sample, max_g_sample)
+            bf = _clamp(bf, min_b_sample, max_b_sample)
+            af = _clamp(af, min_a_sample, max_a_sample)
             # need to be integers so we can do bitwise operations on these variables later
-            ri = int(clamp(math.ceil(rf), 0, 255))
-            gi = int(clamp(math.ceil(gf), 0, 255))
-            bi = int(clamp(math.ceil(bf), 0, 255))
-            ai = int(clamp(math.ceil(af), 0, 255))
+            ri = int(_clamp(math.ceil(rf), 0, 255))
+            gi = int(_clamp(math.ceil(gf), 0, 255))
+            bi = int(_clamp(math.ceil(bf), 0, 255))
+            ai = int(_clamp(math.ceil(af), 0, 255))
             output_data[y * out_width + x] = (ai << 24) | (bi << 16) | (gi << 8) | ri
-        gimp.progress_update(float((out_height - 1) - y)/out_height)
 
     # --- end super-XBR code ---
-    output_data = int_to_rgba(out_width, out_height, output_data)
+    output_data = _int_to_rgba(out_width, out_height, output_data)
+    out = Image.frombytes("RGBA", (out_width, out_height), output_data.tobytes())
+    out.save("test_out.png")
+    print("Done in {} seconds".format(int(time.time() - start)))
+    
+    
+if __name__ == "__main__":    
+    import argparse
 
-    pdb.gimp_image_resize(timg, out_width, out_height, 0, 0)
+    parser = argparse.ArgumentParser(description='Upscale an image with the Super xBR method.')
+    parser.add_argument('input', help='input image filename')
+    parser.add_argument('output', help='output image filename')
+    parser.add_argument('scale', type=int, default=2, help='image scale factor')
+    parser.add_argument('-v', default=False, action='store_true', help='print verbose messages')
+    args = parser.parse_args()
+    
+    python_superxBR(args.input, args.output, args.scale, args.v)
 
-    timg.add_layer(dest_drawable, 0)
-    dest_region[0:out_width, 0:out_height] = output_data.tostring()
 
-    dest_drawable.flush()
-    dest_drawable.merge_shadow(True)
-    dest_drawable.update(0, 0, out_width, out_height)
 
-    timg.flatten()
-
-    timg.undo_group_end()
-    gimp.context_pop()
-
-register(
-    "python_superxBR",
-    "Integer scales an image by a power of 2 using Hyllian's Super-xBR",
-    "Integer scales an image by a power of 2 using Hyllian's Super-xBR",
-    "Abel Briggs",
-    "Hyllian",
-    "2019",
-    "<Image>/Filters/Enhance/Super-xBR(py)...",
-    "RGB, RGBA",
-    [
-        (PF_INT, "scale_factor", "Scale factor(2, 4, 8, 16, etc.)", 2)
-    ],
-    [],
-    python_superxBR)
-
-main()
