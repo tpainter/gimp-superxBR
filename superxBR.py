@@ -491,9 +491,11 @@ if __name__ == "__main__":
     s = io.StringIO()
     ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
     ps.print_stats()
-
+    
+    '''
     with open('profile.txt', 'w+') as f:
         f.write(s.getvalue())
+    '''
 
 
 
