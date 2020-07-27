@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+import cProfile
+import pstats
+
 from PIL import Image
 from array import array
 import math
@@ -37,7 +40,10 @@ def _abs_diff(val1, val2):
 
 # Clamps x to a value between floor and ceiling.
 def _clamp(x, floor, ceiling):
-    return max(min(x, ceiling), floor)
+    #return max(min(x, ceiling), floor)
+    if x < floor: return floor
+    if x > ceiling: return ceiling
+    return x
 
 # Easy way to return an empty 4D matrix list.
 def _matrix_4D():
@@ -474,7 +480,20 @@ if __name__ == "__main__":
     parser.add_argument('-v', default=False, action='store_true', help='print verbose messages')
     args = parser.parse_args()
     
+    #Profile
+    pr = cProfile.Profile()
+    pr.enable()
+    
     python_superxBR(args.input, args.output, args.scale, args.v)
+    
+    pr.disable()
+    
+    s = io.StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
+    ps.print_stats()
+
+    with open('profile.txt', 'w+') as f:
+        f.write(s.getvalue())
 
 
 
